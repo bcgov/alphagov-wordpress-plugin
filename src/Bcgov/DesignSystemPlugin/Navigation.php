@@ -16,7 +16,7 @@ class Navigation {
         add_action('init', [$this, 'register_navigation_post_type']);
         add_action('admin_menu', [$this, 'add_menu'], 20);
         add_filter('allowed_block_types_all', [$this, 'restrict_allowed_blocks'], 10, 2);
-        add_filter('post_row_actions', [$this, 'remove_quick_edit_actions'], 10, 2);
+        add_action('save_post_dswp_navigation', [$this, 'ensure_single_navigation'], 10, 3);
         add_action('admin_head', [$this, 'restrict_editor_modifications']);
     }
 
@@ -31,7 +31,6 @@ class Navigation {
                 'menu_name' => __('Navigation', 'dswp'),
                 'edit_item' => __('Edit Navigation', 'dswp'),
                 'view_item' => __('View Navigation', 'dswp'),
-                'all_items' => __('All Navigations', 'dswp'),
             ],
             'public' => true,
             'publicly_queryable' => false,
@@ -39,18 +38,50 @@ class Navigation {
             'show_in_menu' => false,
             'show_in_rest' => true,
             'supports' => ['editor', 'title'],
+            'capability_type' => 'post',
             'capabilities' => [
                 'edit_post' => 'manage_options',
-                'read_post' => 'manage_options',
-                'delete_post' => 'do_not_allow',
                 'edit_posts' => 'manage_options',
                 'edit_others_posts' => 'manage_options',
-                'delete_posts' => 'do_not_allow',
                 'publish_posts' => 'manage_options',
-                'read_private_posts' => 'manage_options'
+                'read_post' => 'manage_options',
+                'read_private_posts' => 'manage_options',
+                'delete_post' => 'do_not_allow'
             ],
             'map_meta_cap' => false,
         ]);
+
+        // Create default navigation post if it doesn't exist
+        $this->ensure_navigation_exists();
+    }
+
+    /**
+     * Ensure navigation post exists
+     */
+    private function ensure_navigation_exists() {
+        $existing_nav = get_posts([
+            'post_type' => 'dswp_navigation',
+            'posts_per_page' => 1,
+            'post_status' => ['publish', 'draft'],
+        ]);
+
+        if (empty($existing_nav)) {
+            wp_insert_post([
+                'post_type' => 'dswp_navigation',
+                'post_title' => __('Site Navigation', 'dswp'),
+                'post_status' => 'publish',
+            ]);
+        }
+    }
+
+    /**
+     * Ensure only one navigation post exists
+     */
+    public function ensure_single_navigation($post_id, $post, $update) {
+        if (!$update) {
+            wp_delete_post($post_id, true);
+            wp_die(__('Only one navigation is allowed.', 'dswp'));
+        }
     }
 
     /**
@@ -64,18 +95,6 @@ class Navigation {
     }
 
     /**
-     * Remove quick edit and other actions
-     */
-    public function remove_quick_edit_actions($actions, $post) {
-        if ($post->post_type === 'dswp_navigation') {
-            unset($actions['inline hide-if-no-js']);
-            unset($actions['trash']);
-            unset($actions['delete']);
-        }
-        return $actions;
-    }
-
-    /**
      * Add CSS to restrict editor modifications
      */
     public function restrict_editor_modifications() {
@@ -83,7 +102,9 @@ class Navigation {
             echo '<style>
                 .editor-post-trash,
                 .editor-post-switch-to-draft,
-                .components-button.editor-post-last-revision__title {
+                .components-button.editor-post-last-revision__title,
+                .editor-post-preview,
+                .block-editor-block-list__layout .block-editor-block-list__block .block-editor-block-list__layout {
                     display: none !important;
                 }
             </style>';
@@ -94,13 +115,21 @@ class Navigation {
      * Add the navigation menu item
      */
     public function add_menu() {
-        add_submenu_page(
-            'dswp-admin-menu',           // Parent slug
-            __('Navigation', 'dswp'),    // Page title
-            __('Navigation', 'dswp'),    // Menu title
-            'manage_options',            // Capability
-            'edit.php?post_type=dswp_navigation', // Menu slug
-            null                         // Callback function
-        );
+        $nav_post = get_posts([
+            'post_type' => 'dswp_navigation',
+            'posts_per_page' => 1,
+            'post_status' => ['publish', 'draft'],
+        ]);
+
+        if (!empty($nav_post)) {
+            add_submenu_page(
+                'dswp-admin-menu',
+                __('Navigation', 'dswp'),
+                __('Navigation', 'dswp'),
+                'manage_options',
+                'post.php?post=' . $nav_post[0]->ID . '&action=edit',
+                null
+            );
+        }
     }
 }
