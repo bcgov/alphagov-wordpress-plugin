@@ -57,7 +57,8 @@ add_action( 'init', 'design_system_register_blocks' );
 use Bcgov\DesignSystemPlugin\{
     NotificationBanner,
     ContentSecurityPolicy,
-    SkipNavigation
+    SkipNavigation,
+    Navigation
 };
 
 use Bcgov\DesignSystemPlugin\Enqueue\{
@@ -66,23 +67,23 @@ use Bcgov\DesignSystemPlugin\Enqueue\{
 };
 
 
-// Initialize the custom banner class.
+// Initialize the notification banner class first (creates main menu)
 $notification_banner = new NotificationBanner();
 $notification_banner->init();
 
-// Initialize the content security policy class.
+// Initialize other classes
 $content_security_policy = new ContentSecurityPolicy();
 $content_security_policy->init();
 
-
-// Initialize the content security policy class.
 $skip_navigation = new SkipNavigation();
 $skip_navigation->init();
 
-// Initialize the enqueueing styles class.
 $enque_styles = new Style();
 $enque_styles->init();
 
-// Initialize the enqueueing scripts class.
 $enqueue_scripts = new Script();
 $enqueue_scripts->init();
+
+// Initialize navigation last
+$navigation = new Navigation();
+$navigation->init();
