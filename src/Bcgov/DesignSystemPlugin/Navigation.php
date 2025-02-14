@@ -89,7 +89,12 @@ class Navigation {
      */
     public function restrict_allowed_blocks($allowed_blocks, $context) {
         if (!empty($context->post) && $context->post->post_type === 'dswp_navigation') {
-            return ['design-system-wordpress-plugin/navigation'];
+            return [
+                'design-system-wordpress-plugin/navigation',
+                'core/navigation-link',
+                'core/navigation-submenu',
+                'core/spacer'
+            ];
         }
         return $allowed_blocks;
     }
@@ -103,8 +108,7 @@ class Navigation {
                 .editor-post-trash,
                 .editor-post-switch-to-draft,
                 .components-button.editor-post-last-revision__title,
-                .editor-post-preview,
-                .block-editor-block-list__layout .block-editor-block-list__block .block-editor-block-list__layout {
+                .editor-post-preview {
                     display: none !important;
                 }
             </style>';
@@ -115,21 +119,25 @@ class Navigation {
      * Add the navigation menu item
      */
     public function add_menu() {
-        $nav_post = get_posts([
+        add_submenu_page(
+            'dswp-admin-menu',
+            __('Navigation', 'dswp'),
+            __('Navigation', 'dswp'),
+            'manage_options',
+            'post.php?post=' . $this->get_navigation_post_id() . '&action=edit'
+        );
+    }
+
+    /**
+     * Get the navigation post ID
+     */
+    private function get_navigation_post_id() {
+        $navigation = get_posts([
             'post_type' => 'dswp_navigation',
             'posts_per_page' => 1,
             'post_status' => ['publish', 'draft'],
         ]);
 
-        if (!empty($nav_post)) {
-            add_submenu_page(
-                'dswp-admin-menu',
-                __('Navigation', 'dswp'),
-                __('Navigation', 'dswp'),
-                'manage_options',
-                'post.php?post=' . $nav_post[0]->ID . '&action=edit',
-                null
-            );
-        }
+        return !empty($navigation) ? $navigation[0]->ID : 0;
     }
 }
