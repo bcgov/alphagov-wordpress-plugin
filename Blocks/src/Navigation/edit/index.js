@@ -37,27 +37,21 @@ const ALLOWED_BLOCKS = [
 export default function Edit( { attributes, setAttributes, clientId } ) {
 	const { menuId, overlayMenu, mobileBreakpoint = 768 } = attributes;
 
-	/**
-	 * WordPress dispatch and registry hooks for block manipulation
-	 */
+	const blockProps = useBlockProps({
+		className: `dswp-block-navigation-is-${overlayMenu}-overlay`,
+		'data-dswp-mobile-breakpoint': mobileBreakpoint,
+	});
+
 	const { replaceInnerBlocks } = useDispatch( blockEditorStore );
-	const { editEntityRecord, saveEditedEntityRecord } =
-		useDispatch( coreStore );
+	const { editEntityRecord, saveEditedEntityRecord } = useDispatch( coreStore );
 	const registry = useRegistry();
 
-	/**
-	 * Block props with dynamic className and mobile breakpoint styling
-	 * Memoized to prevent unnecessary re-renders
-	 */
-	const blockProps = useBlockProps( {
-		className: `dswp-block-navigation-is-${ overlayMenu }-overlay`,
-		'data-dswp-mobile-breakpoint': mobileBreakpoint,
-	} );
+	// Refs for tracking state
+	const lastSavedContent = useRef( null );
+	const initialBlocksRef = useRef( null );
+	const isInitialLoad = useRef( true );
 
-	/**
-	 * Combined selector hook for retrieving menu data and block state
-	 * Optimized to reduce re-renders by combining multiple selectors
-	 */
+	// Combined selector for all required data
 	const {
 		menus,
 		hasResolvedMenus,
@@ -65,41 +59,30 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 		currentBlocks,
 		isCurrentPostSaving,
 	} = useSelect(
-		( select ) => {
+		(select) => {
 			const {
 				getEntityRecords,
 				hasFinishedResolution,
 				getEditedEntityRecord,
-			} = select( coreStore );
-			const query = { per_page: -1, status: [ 'publish', 'draft' ] };
+			} = select(coreStore);
+			const query = { per_page: -1, status: ['publish', 'draft'] };
 
 			return {
-				menus: getEntityRecords( 'postType', 'wp_navigation', query ),
-				hasResolvedMenus: hasFinishedResolution( 'getEntityRecords', [
+				menus: getEntityRecords('postType', 'wp_navigation', query),
+				hasResolvedMenus: hasFinishedResolution('getEntityRecords', [
 					'postType',
 					'wp_navigation',
 					query,
-				] ),
+				]),
 				selectedMenu: menuId
-					? getEditedEntityRecord(
-							'postType',
-							'wp_navigation',
-							menuId
-					  )
+					? getEditedEntityRecord('postType', 'wp_navigation', menuId)
 					: null,
-				currentBlocks: select( blockEditorStore ).getBlocks( clientId ),
-				isCurrentPostSaving: select( 'core/editor' )?.isSavingPost(),
+				currentBlocks: select(blockEditorStore).getBlocks(clientId),
+				isCurrentPostSaving: select('core/editor')?.isSavingPost(),
 			};
 		},
-		[ menuId, clientId ]
+		[menuId, clientId]
 	);
-
-	/**
-	 * Refs for tracking content state and initialization
-	 */
-	const lastSavedContent = useRef( null );
-	const isInitialLoad = useRef( true );
-	const initialBlocksRef = useRef( null );
 
 	/**
 	 * Processes navigation blocks to ensure correct structure and attributes
@@ -140,117 +123,77 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 			.filter( Boolean );
 	}, [] );
 
-	/**
-	 * Effect for handling initial menu content load
-	 */
-	useEffect( () => {
-		if ( selectedMenu?.content && isInitialLoad.current ) {
-			const parsedBlocks = parse( selectedMenu.content );
-			initialBlocksRef.current = serialize( parsedBlocks );
+	// Add these memoized functions after the processBlocks definition
+	const memoizedParse = useCallback((content) => parse(content), []);
+	const memoizedSerialize = useCallback((blocks) => serialize(blocks), []);
+
+	// Update the initial load effect
+	useEffect(() => {
+		if (selectedMenu?.content && isInitialLoad.current) {
+			const parsedBlocks = memoizedParse(selectedMenu.content);
+			initialBlocksRef.current = memoizedSerialize(parsedBlocks);
 			lastSavedContent.current = initialBlocksRef.current;
 			registry
-				.dispatch( blockEditorStore )
+				.dispatch(blockEditorStore)
 				.__unstableMarkNextChangeAsNotPersistent();
 		}
-	}, [ selectedMenu, registry ] );
+	}, [selectedMenu, registry, memoizedParse, memoizedSerialize]);
 
-	/**
-	 * Effect for handling block content changes
-	 * Marks changes as non-persistent when content matches initial state
-	 */
-	useEffect( () => {
-		if ( ! isInitialLoad.current && currentBlocks ) {
-			const serializedContent = serialize( currentBlocks );
-			if ( serializedContent === initialBlocksRef.current ) {
-				registry
-					.dispatch( blockEditorStore )
-					.__unstableMarkNextChangeAsNotPersistent();
-			}
-		}
-	}, [ currentBlocks, registry ] );
-
-	/**
-	 * Effect for saving menu changes
-	 * Handles saving when post is being saved
-	 */
-	useEffect( () => {
-		if ( ! isCurrentPostSaving || ! menuId || ! currentBlocks ) {
-			return;
-		}
-
-		const serializedContent = serialize( currentBlocks );
-		if (
-			serializedContent === lastSavedContent.current ||
-			( isInitialLoad.current &&
-				serializedContent === initialBlocksRef.current )
-		) {
-			return;
-		}
-
-		lastSavedContent.current = serializedContent;
-
-		( async () => {
-			try {
-				await editEntityRecord( 'postType', 'wp_navigation', menuId, {
-					content: serializedContent,
-					status: 'publish',
-				} );
-				await saveEditedEntityRecord(
-					'postType',
-					'wp_navigation',
-					menuId
-				);
-			} catch ( error ) {
-				throw new Error( 'Failed to update navigation menu:', error );
-			}
-		} )();
-	}, [
-		isCurrentPostSaving,
-		menuId,
-		currentBlocks,
-		editEntityRecord,
-		saveEditedEntityRecord,
-	] );
-
-	/**
-	 * Effect for updating blocks when menu selection changes
-	 * Processes and replaces blocks when a new menu is selected
-	 */
-	useEffect( () => {
-		if ( ! selectedMenu || ! selectedMenu.content ) {
+	// Update the menu selection change effect
+	useEffect(() => {
+		if (!selectedMenu) {
 			registry
-				.dispatch( blockEditorStore )
+				.dispatch(blockEditorStore)
 				.__unstableMarkNextChangeAsNotPersistent();
-			replaceInnerBlocks( clientId, [] );
-			lastSavedContent.current = serialize( [] );
+			replaceInnerBlocks(clientId, []);
+			lastSavedContent.current = memoizedSerialize([]);
 			isInitialLoad.current = false;
 			return;
 		}
 
-		const parsedBlocks = parse( selectedMenu.content );
-		const newBlocks = processBlocks( parsedBlocks );
+		let contentToParse = selectedMenu.content;
+		if (typeof contentToParse === 'function') {
+			const existingBlocks = registry.select(blockEditorStore).getBlocks(clientId);
+			contentToParse = contentToParse(existingBlocks);
+		}
+
+		if (!contentToParse) return;
+
+		const parsedBlocks = memoizedParse(contentToParse);
+		const newBlocks = processBlocks(parsedBlocks);
 
 		registry
-			.dispatch( blockEditorStore )
+			.dispatch(blockEditorStore)
 			.__unstableMarkNextChangeAsNotPersistent();
-		replaceInnerBlocks( clientId, newBlocks );
+		replaceInnerBlocks(clientId, newBlocks);
 
-		if ( isInitialLoad.current ) {
-			lastSavedContent.current = serialize( newBlocks );
+		if (isInitialLoad.current) {
+			lastSavedContent.current = memoizedSerialize(newBlocks);
 			initialBlocksRef.current = lastSavedContent.current;
 			isInitialLoad.current = false;
+		}
+	}, [selectedMenu, registry, clientId, replaceInnerBlocks, processBlocks, memoizedParse, memoizedSerialize]);
 
+	// Simplify the block content change effect
+	useEffect(() => {
+		if (!currentBlocks || !menuId || !selectedMenu?.content) return;
+
+		const serializedContent = serialize(currentBlocks);
+		if (serializedContent === lastSavedContent.current) return;
+
+		lastSavedContent.current = serializedContent;
+		
+		editEntityRecord('postType', 'wp_navigation', menuId, {
+			content: serializedContent,
+			status: 'publish',
+		});
+
+		if (serializedContent === initialBlocksRef.current) {
 			registry
-				.dispatch( blockEditorStore )
+				.dispatch(blockEditorStore)
 				.__unstableMarkNextChangeAsNotPersistent();
 		}
-	}, [
-		selectedMenu,
-		registry,
-		clientId,
-		processBlocks,
-		replaceInnerBlocks,
-	] );
+	}, [currentBlocks, menuId, selectedMenu, editEntityRecord, registry]);
 
 	/**
 	 * Handles menu selection changes
