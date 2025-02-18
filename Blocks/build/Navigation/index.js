@@ -61,7 +61,12 @@ function Edit({
   } = attributes;
   const blockProps = (0,_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_4__.useBlockProps)({
     className: `dswp-block-navigation-is-${overlayMenu}-overlay`,
-    'data-dswp-mobile-breakpoint': mobileBreakpoint
+    'data-dswp-mobile-breakpoint': mobileBreakpoint,
+    onFocus: () => setIsEditing(true),
+    onBlur: () => {
+      // Small delay to ensure the content is updated after the edit is complete
+      setTimeout(() => setIsEditing(false), 100);
+    }
   });
   const {
     replaceInnerBlocks
@@ -76,6 +81,12 @@ function Edit({
   const lastSavedContent = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_2__.useRef)(null);
   const initialBlocksRef = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_2__.useRef)(null);
   const isInitialLoad = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_2__.useRef)(true);
+
+  // Add this state to track editing
+  const [isEditing, setIsEditing] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_2__.useState)(false);
+
+  // Add this ref for the update timeout
+  const updateTimeoutRef = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_2__.useRef)(null);
 
   // Combined selector for all required data
   const {
@@ -171,19 +182,35 @@ function Edit({
     }
   }, [selectedMenu, registry, clientId, replaceInnerBlocks, processBlocks, memoizedParse, memoizedSerialize]);
 
-  // Simplify the block content change effect
+  // Modify the content change effect
   (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_2__.useEffect)(() => {
     if (!currentBlocks || !menuId || !selectedMenu?.content) return;
-    const serializedContent = (0,_wordpress_blocks__WEBPACK_IMPORTED_MODULE_6__.serialize)(currentBlocks);
-    if (serializedContent === lastSavedContent.current) return;
-    lastSavedContent.current = serializedContent;
-    editEntityRecord('postType', 'wp_navigation', menuId, {
-      content: serializedContent,
-      status: 'publish'
-    });
-    if (serializedContent === initialBlocksRef.current) {
-      registry.dispatch(_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_4__.store).__unstableMarkNextChangeAsNotPersistent();
+
+    // Clear any existing timeout
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
     }
+
+    // Set a new timeout to update after typing has stopped
+    updateTimeoutRef.current = setTimeout(() => {
+      const serializedContent = (0,_wordpress_blocks__WEBPACK_IMPORTED_MODULE_6__.serialize)(currentBlocks);
+      if (serializedContent === lastSavedContent.current) return;
+      lastSavedContent.current = serializedContent;
+      editEntityRecord('postType', 'wp_navigation', menuId, {
+        content: serializedContent,
+        status: 'publish'
+      });
+      if (serializedContent === initialBlocksRef.current) {
+        registry.dispatch(_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_4__.store).__unstableMarkNextChangeAsNotPersistent();
+      }
+    }, 500); // Wait 500ms after last change before updating
+
+    // Cleanup timeout on unmount or when dependencies change
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
   }, [currentBlocks, menuId, selectedMenu, editEntityRecord, registry]);
 
   /**

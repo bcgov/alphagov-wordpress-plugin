@@ -7,7 +7,7 @@ import {
 	RangeControl,
 } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
-import { useEffect, useRef, useCallback, useMemo } from '@wordpress/element';
+import { useEffect, useRef, useCallback, useMemo, useState } from '@wordpress/element';
 import { useDispatch, useSelect, useRegistry } from '@wordpress/data';
 import {
 	store as blockEditorStore,
@@ -40,6 +40,11 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 	const blockProps = useBlockProps({
 		className: `dswp-block-navigation-is-${overlayMenu}-overlay`,
 		'data-dswp-mobile-breakpoint': mobileBreakpoint,
+		onFocus: () => setIsEditing(true),
+		onBlur: () => {
+			// Small delay to ensure the content is updated after the edit is complete
+			setTimeout(() => setIsEditing(false), 100);
+		}
 	});
 
 	const { replaceInnerBlocks } = useDispatch( blockEditorStore );
@@ -50,6 +55,12 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 	const lastSavedContent = useRef( null );
 	const initialBlocksRef = useRef( null );
 	const isInitialLoad = useRef( true );
+
+	// Add this state to track editing
+	const [isEditing, setIsEditing] = useState(false);
+
+	// Add this ref for the update timeout
+	const updateTimeoutRef = useRef(null);
 
 	// Combined selector for all required data
 	const {
@@ -174,25 +185,40 @@ export default function Edit( { attributes, setAttributes, clientId } ) {
 		}
 	}, [selectedMenu, registry, clientId, replaceInnerBlocks, processBlocks, memoizedParse, memoizedSerialize]);
 
-	// Simplify the block content change effect
+	// Modify the content change effect
 	useEffect(() => {
 		if (!currentBlocks || !menuId || !selectedMenu?.content) return;
 
-		const serializedContent = serialize(currentBlocks);
-		if (serializedContent === lastSavedContent.current) return;
-
-		lastSavedContent.current = serializedContent;
-		
-		editEntityRecord('postType', 'wp_navigation', menuId, {
-			content: serializedContent,
-			status: 'publish',
-		});
-
-		if (serializedContent === initialBlocksRef.current) {
-			registry
-				.dispatch(blockEditorStore)
-				.__unstableMarkNextChangeAsNotPersistent();
+		// Clear any existing timeout
+		if (updateTimeoutRef.current) {
+			clearTimeout(updateTimeoutRef.current);
 		}
+
+		// Set a new timeout to update after typing has stopped
+		updateTimeoutRef.current = setTimeout(() => {
+			const serializedContent = serialize(currentBlocks);
+			if (serializedContent === lastSavedContent.current) return;
+
+			lastSavedContent.current = serializedContent;
+			
+			editEntityRecord('postType', 'wp_navigation', menuId, {
+				content: serializedContent,
+				status: 'publish',
+			});
+
+			if (serializedContent === initialBlocksRef.current) {
+				registry
+					.dispatch(blockEditorStore)
+					.__unstableMarkNextChangeAsNotPersistent();
+			}
+		}, 500); // Wait 500ms after last change before updating
+
+		// Cleanup timeout on unmount or when dependencies change
+		return () => {
+			if (updateTimeoutRef.current) {
+				clearTimeout(updateTimeoutRef.current);
+			}
+		};
 	}, [currentBlocks, menuId, selectedMenu, editEntityRecord, registry]);
 
 	/**
